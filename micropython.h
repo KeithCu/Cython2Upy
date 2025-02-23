@@ -341,6 +341,16 @@ static inline int PyModule_AddObject(PyObject* module, const char* name, PyObjec
     return 0;
 }
 
+// Module convenience functions.
+static inline int PyModule_AddIntConstant(PyObject* module, const char* name, long value) {
+    return PyModule_AddObject(module, name, mp_obj_new_int(value));
+}
+static inline int PyModule_AddStringConstant(PyObject* module, const char* name, const char* value) {
+    return PyModule_AddObject(module, name, mp_obj_new_str(value, strlen(value)));
+}
+
+
+
 // ============================================================
 // Error Handling
 // ============================================================
@@ -369,6 +379,104 @@ static inline void PyErr_Clear(void) {
 static inline PyObject* PyErr_Occurred(void) {
     return mp_obj_is_exception_type(mp_err_get_raised()) ? mp_err_get_raised() : NULL;
 }
+
+// --- New additions for extended CPython API support in MicroPython --- //
+
+// PyErr_Format: Format an error message and set the exception.
+static inline void PyErr_Format(PyObject *exc, const char *fmt, ...) {
+    char buffer[256];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buffer, sizeof(buffer), fmt, args);
+    va_end(args);
+    PyErr_SetString(exc, buffer);
+}
+
+// PyErr_Fetch: Retrieve (and clear) the current exception state (minimal stub).
+static inline void PyErr_Fetch(PyObject **ptype, PyObject **pvalue, PyObject **ptraceback) {
+    PyObject *exc = PyErr_Occurred();
+    if (exc) {
+        *ptype = exc;
+        *pvalue = exc;
+        *ptraceback = NULL;
+        PyErr_Clear();
+    } else {
+        *ptype = *pvalue = *ptraceback = NULL;
+    }
+}
+
+// PyErr_Restore: Restore exception state (stub; simply raises the passed exception).
+static inline void PyErr_Restore(PyObject *ptype, PyObject *pvalue, PyObject *ptraceback) {
+    if (pvalue) {
+        mp_raise_obj(pvalue);
+    }
+}
+
+// PyCapsule_New / PyCapsule_GetPointer: Minimal capsule support (store pointer as integer).
+static inline PyObject* PyCapsule_New(void *pointer, const char *name, void (*destructor)(PyObject *)) {
+    return mp_obj_new_int((intptr_t)pointer);
+}
+static inline void* PyCapsule_GetPointer(PyObject *capsule, const char *name) {
+    return (void*)(intptr_t)mp_obj_get_int(capsule);
+}
+
+// Memory allocation API using MicroPython's allocation routines.
+static inline void* PyMem_Malloc(size_t size) {
+    return m_malloc(size);
+}
+static inline void* PyMem_Realloc(void* ptr, size_t new_size) {
+    return m_realloc(ptr, new_size);
+}
+static inline void PyMem_Free(void* ptr) {
+    m_free(ptr);
+}
+
+// Convenience macros for function returns.
+#define Py_RETURN_NONE do { return Py_None; } while(0)
+#define Py_RETURN_TRUE do { return Py_True; } while(0)
+#define Py_RETURN_FALSE do { return Py_False; } while(0)
+
+// PyArg_ParseTupleAndKeywords: Minimal stub (does not support keyword arguments).
+static inline int PyArg_ParseTupleAndKeywords(PyObject* args, PyObject* kwargs, const char* format, char* kwlist[], ...) {
+    mp_raise_NotImplementedError("PyArg_ParseTupleAndKeywords is not implemented in MicroPython");
+    return 0;
+}
+
+// Extended long conversion functions.
+static inline long long PyLong_AsLongLong(PyObject* obj) {
+    if (mp_obj_is_int(obj)) {
+        return (long long)mp_obj_get_int(obj);
+    }
+    mp_raise_TypeError(MP_ERROR_TEXT("expected int"));
+    return 0;
+}
+static inline PyObject* PyLong_FromLongLong(long long val) {
+    return mp_obj_new_int(val);
+}
+static inline unsigned long long PyLong_AsUnsignedLongLong(PyObject* obj) {
+    if (mp_obj_is_int(obj)) {
+        long long val = mp_obj_get_int(obj);
+        if (val < 0) {
+            mp_raise_ValueError(MP_ERROR_TEXT("unsigned conversion: negative value"));
+            return 0;
+        }
+        return (unsigned long long)val;
+    }
+    mp_raise_TypeError(MP_ERROR_TEXT("expected int"));
+    return 0;
+}
+static inline PyObject* PyLong_FromUnsignedLongLong(unsigned long long val) {
+    return mp_obj_new_int(val);
+}
+
+// PyErr_WriteUnraisable: Write out unraisable exceptions (minimal stub).
+static inline void PyErr_WriteUnraisable(PyObject *obj) {
+    mp_printf(&mp_plat_print, "Unraisable exception in object: %p\n", obj);
+}
+
+// Macro to retrieve the type of an object.
+#define Py_TYPE(ob) mp_obj_get_type(ob)
+
 
 // ============================================================
 // String and Byte Operations
@@ -784,6 +892,293 @@ static inline PyObject* PyObject_CallObject(PyObject* callable, PyObject* args) 
     }
     return PyObject_Call(callable, args, NULL);
 }
+
+
+// --- Additional CPython API compatibility additions ---
+
+// PyObject_CallMethod: Minimal support for calling a no-argument method.
+static inline PyObject* PyObject_CallMethod(PyObject* obj, const char* method, const char* format, ...) {
+    if (format && format[0] != '\0') {
+        mp_raise_NotImplementedError(MP_ERROR_TEXT("PyObject_CallMethod with arguments not implemented"));
+    }
+    PyObject* attr = mp_load_attr(obj, mp_obj_new_str(method, strlen(method)));
+    if (attr == MP_OBJ_NULL) {
+        mp_raise_AttributeError(MP_ERROR_TEXT("object has no attribute"));
+    }
+    return mp_call_function_0(attr);
+}
+
+// PyObject_CallFunction: Minimal support (only no-argument calls).
+static inline PyObject* PyObject_CallFunction(PyObject* callable, const char* format, ...) {
+    if (format && format[0] != '\0') {
+        mp_raise_NotImplementedError(MP_ERROR_TEXT("PyObject_CallFunction with arguments not implemented"));
+    }
+    return mp_call_function_0(callable);
+}
+
+// PyObject_Hash: Return the hash of an object.
+static inline long PyObject_Hash(PyObject* obj) {
+    return mp_obj_hash(obj);
+}
+
+// PyNumber_Index: Returns the object itself if it is an int, else raises.
+static inline PyObject* PyNumber_Index(PyObject* obj) {
+    if (mp_obj_is_int(obj)) {
+        return obj;
+    }
+    mp_raise_TypeError(MP_ERROR_TEXT("an integer is required"));
+    return NULL;
+}
+
+// PyFloat_FromDouble: Create a new float object from a C double.
+static inline PyObject* PyFloat_FromDouble(double val) {
+    return mp_obj_new_float(val);
+}
+
+// PySequence_Contains: Checks if 'ob' is in the sequence 'seq'.
+static inline int PySequence_Contains(PyObject* seq, PyObject* ob) {
+    PyObject* iter = mp_getiter(seq, NULL);
+    if (iter == MP_OBJ_NULL) {
+        mp_raise_TypeError(MP_ERROR_TEXT("object is not iterable"));
+        return 0;
+    }
+    PyObject* item;
+    while ((item = mp_iternext(iter)) != MP_OBJ_STOP_ITERATION) {
+        if (mp_obj_equal(item, ob)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// PySequence_Tuple: Converts a sequence into a tuple.
+static inline PyObject* PySequence_Tuple(PyObject* seq) {
+    if (mp_obj_is_type(seq, &mp_type_tuple)) {
+        return seq;
+    }
+    Py_ssize_t n = PySequence_Size(seq);
+    if (n < 0) return NULL;
+    PyObject* tup = PyTuple_New(n);
+    for (Py_ssize_t i = 0; i < n; i++) {
+        PyObject* item = PySequence_GetItem(seq, i);
+        // PyTuple_SET_ITEM steals the reference.
+        PyTuple_SET_ITEM(tup, i, item);
+    }
+    return tup;
+}
+
+// PyMapping_Check: Minimal check to see if object is a mapping (here, a dict).
+static inline int PyMapping_Check(PyObject* obj) {
+    return mp_obj_is_type(obj, &mp_type_dict);
+}
+
+// PyObject_Dir: Returns a list of attributes (only implemented for modules).
+static inline PyObject* PyObject_Dir(PyObject* obj) {
+    if (mp_obj_is_type(obj, &mp_type_module)) {
+        return mp_obj_dict_keys(mp_obj_module_get_globals(obj));
+    }
+    mp_raise_NotImplementedError(MP_ERROR_TEXT("PyObject_Dir is not implemented for this type"));
+    return NULL;
+}
+
+// PyArg_UnpackTuple: Unpacks a tuple into C variables (minimal version).
+static inline int PyArg_UnpackTuple(PyObject *args, const char *name, Py_ssize_t min, Py_ssize_t max, ...) {
+    Py_ssize_t n = PySequence_Size(args);
+    if (n < min || n > max) {
+        mp_raise_ValueError(MP_ERROR_TEXT("argument count mismatch"));
+        return 0;
+    }
+    va_list vargs;
+    va_start(vargs, max);
+    for (Py_ssize_t i = 0; i < n; i++) {
+        PyObject **p = va_arg(vargs, PyObject **);
+        *p = PySequence_GetItem(args, i);  // new reference; caller must DECREF when done
+    }
+    va_end(vargs);
+    return 1;
+}
+
+// PyUnicode_FromFormat: Create a new Unicode string using a printf-style format.
+static inline PyObject* PyUnicode_FromFormat(const char* format, ...) {
+    char buffer[256];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+    return mp_obj_new_str(buffer, strlen(buffer));
+}
+
+// PyType_IsSubtype: Minimal stub (only supports equality).
+static inline int PyType_IsSubtype(PyObject* a, PyObject* b) {
+    if (a == b) return 1;
+    mp_raise_NotImplementedError(MP_ERROR_TEXT("PyType_IsSubtype not fully implemented"));
+    return 0;
+}
+
+// PyErr_NewExceptionWithDoc: Create a new exception type with a doc string.
+static inline PyObject* PyErr_NewExceptionWithDoc(const char* name, const char* doc, PyObject* base, PyObject* dict) {
+    // For now, simply call PyErr_NewException.
+    return PyErr_NewException(name, base, dict);
+}
+
+// PyObject_IsInstance: Minimal instance check.
+static inline int PyObject_IsInstance(PyObject* obj, PyObject* type) {
+    return mp_obj_get_type(obj) == type;
+}
+
+// PyObject_IsSubclass: Minimal subclass check.
+static inline int PyObject_IsSubclass(PyObject* derived, PyObject* base) {
+    return derived == base;
+}
+
+// PyErr_BadArgument: Convenience function to raise a bad argument error.
+static inline int PyErr_BadArgument(void) {
+    mp_raise_ValueError(MP_ERROR_TEXT("bad argument"));
+    return 0;
+}
+
+// PyTuple_GetSlice: Return a new tuple which is a slice of an existing tuple.
+static inline PyObject* PyTuple_GetSlice(PyObject* tuple, Py_ssize_t low, Py_ssize_t high) {
+    if (!mp_obj_is_type(tuple, &mp_type_tuple)) {
+        mp_raise_TypeError(MP_ERROR_TEXT("expected tuple"));
+        return NULL;
+    }
+    Py_ssize_t size = PyTuple_Size(tuple);
+    if (low < 0) low = 0;
+    if (high > size) high = size;
+    Py_ssize_t new_size = high - low;
+    PyObject* new_tuple = PyTuple_New(new_size);
+    for (Py_ssize_t i = 0; i < new_size; i++) {
+        PyObject* item = PyTuple_GetItem(tuple, low + i);
+        PyTuple_SET_ITEM(new_tuple, i, item);
+    }
+    return new_tuple;
+}
+
+// PyBool_FromLong: Return Py_True or Py_False based on the value.
+static inline PyObject* PyBool_FromLong(long v) {
+    return v ? Py_True : Py_False;
+}
+
+// PyErr_NoMemory: Raise a MemoryError.
+static inline PyObject* PyErr_NoMemory(void) {
+    mp_raise_MemoryError();
+    return NULL;
+}
+
+
+// --- New additional CPython API compatibility functions --- //
+
+// PyObject_CallFunctionObjArgs: Call a callable with a variable number of arguments (max 16).
+static inline PyObject* PyObject_CallFunctionObjArgs(PyObject* callable, ...) {
+    va_list vargs;
+    va_start(vargs, callable);
+    PyObject* args[16];
+    int count = 0;
+    while (count < 16) {
+        PyObject* arg = va_arg(vargs, PyObject*);
+        if (arg == NULL) break;
+        args[count++] = arg;
+    }
+    va_end(vargs);
+    PyObject* tuple = PyTuple_New(count);
+    for (int i = 0; i < count; i++) {
+        // PyTuple_SET_ITEM steals the reference.
+        PyTuple_SET_ITEM(tuple, i, args[i]);
+    }
+    return PyObject_Call(callable, tuple, NULL);
+}
+
+// PySequence_List: Convert any iterable to a list.
+static inline PyObject* PySequence_List(PyObject* seq) {
+    if (mp_obj_is_type(seq, &mp_type_list)) {
+        return seq;
+    }
+    Py_ssize_t n = PySequence_Size(seq);
+    if (n < 0) return NULL;
+    PyObject* list_obj = mp_obj_new_list(n, NULL);
+    for (Py_ssize_t i = 0; i < n; i++) {
+        PyObject* item = PySequence_GetItem(seq, i);
+        mp_obj_list_store(list_obj, (size_t)i, item);
+    }
+    return list_obj;
+}
+
+// PyErr_WarnEx: Issue a warning (minimal stub: prints to console).
+static inline int PyErr_WarnEx(PyObject *category, const char *message, Py_ssize_t stack_level) {
+    mp_printf(&mp_plat_print, "Warning: %s\n", message);
+    return 0;
+}
+
+// PySys_WriteStdout and PySys_WriteStderr: Write formatted output.
+static inline void PySys_WriteStdout(const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    mp_vprintf(&mp_plat_print, format, args);
+    va_end(args);
+}
+
+static inline void PySys_WriteStderr(const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    mp_vprintf(&mp_plat_print, format, args);
+    va_end(args);
+}
+
+// PyBytes_FromFormat: Create a new bytes object using a printf-style format.
+static inline PyObject* PyBytes_FromFormat(const char* format, ...) {
+    char buffer[256];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+    return mp_obj_new_bytes((const byte*)buffer, strlen(buffer));
+}
+
+// Raw memory allocation routines.
+static inline void* PyMem_RawMalloc(size_t size) {
+    return m_malloc(size);
+}
+static inline void* PyMem_RawRealloc(void* ptr, size_t size) {
+    return m_realloc(ptr, size);
+}
+static inline void PyMem_RawFree(void* ptr) {
+    m_free(ptr);
+}
+
+// PyMem_Calloc: Allocate and zero-initialize memory.
+static inline void* PyMem_Calloc(size_t nelem, size_t elsize) {
+    size_t total = nelem * elsize;
+    void* ptr = m_malloc(total);
+    if (ptr) {
+        memset(ptr, 0, total);
+    }
+    return ptr;
+}
+
+// Minimal GIL-state support (MicroPython has no GIL).
+typedef struct {
+    int dummy;
+} PyGILState_STATE;
+
+static inline PyGILState_STATE PyGILState_Ensure(void) {
+    PyGILState_STATE state = {0};
+    return state;
+}
+
+static inline void PyGILState_Release(PyGILState_STATE state) {
+    (void)state;
+}
+
+// PyCFunction_NewEx: Create a built-in function object from a PyMethodDef.
+static inline PyObject* PyCFunction_NewEx(PyMethodDef *def, PyObject *self, PyObject *module) {
+    if (def == NULL || def->ml_meth == NULL) {
+        mp_raise_ValueError(MP_ERROR_TEXT("invalid PyMethodDef"));
+    }
+    // This simplistic implementation ignores 'self' and 'module' and flags.
+    return mp_obj_new_fun_builtin(def->ml_meth, 0);
+}
+
 
 // ============================================================
 // Module Initialization Support and CPython Feature Disables
