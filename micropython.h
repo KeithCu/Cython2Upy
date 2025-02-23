@@ -1,28 +1,36 @@
 #ifndef CPYTHON_TO_MICROPYTHON_H
 #define CPYTHON_TO_MICROPYTHON_H
 
+// ============================================================
+// Includes and Basic Definitions
+// ============================================================
 #include "py/obj.h"
 #include "py/runtime.h"
 #include "py/builtin.h"
 #include <string.h>  // for strlen()
 
-// Define basic types to match CPython's expectations
+// ------------------------------------------------------------
+// Basic Types and Constants
+// ------------------------------------------------------------
 typedef mp_obj_t PyObject;
 typedef int Py_ssize_t;
 
-// Define NULL if not defined
 #ifndef NULL
 #define NULL ((void*)0)
 #endif
 
-// Map CPython object constants to MicroPython ones
+// ------------------------------------------------------------
+// CPython Object Constants Mapping
+// ------------------------------------------------------------
 #define Py_None mp_const_none
 #define Py_True mp_const_true
 #define Py_False mp_const_false
 #define Py_NotImplemented mp_const_notimplemented
 #define Py_Ellipsis mp_const_ellipsis
 
-// Disable CPython-specific refcounting (MicroPython manages memory differently)
+// ------------------------------------------------------------
+// Disable CPython-Specific Reference Counting
+// ------------------------------------------------------------
 #define Py_INCREF(obj) ((void)0)
 #define Py_DECREF(obj) ((void)0)
 #define Py_XINCREF(obj) ((void)0)
@@ -31,8 +39,12 @@ typedef int Py_ssize_t;
 #define __Pyx_GOTREF(obj) ((void)0)
 #define __Pyx_GIVEREF(obj) ((void)0)
 
+// ============================================================
+// Container Creation Functions
+// ============================================================
+
 // ---------------------
-// List Creation/Manipulation
+// List Creation and Manipulation
 // ---------------------
 static inline PyObject* PyList_New(Py_ssize_t size) {
     return mp_obj_new_list((size_t)size, NULL);
@@ -46,7 +58,7 @@ static inline int PyList_SET_ITEM(PyObject* list, Py_ssize_t i, PyObject* item) 
 #define __Pyx_PyList_SET_ITEM(list, i, item) PyList_SET_ITEM(list, i, item)
 
 // ---------------------
-// Tuple Creation
+// Tuple Creation and Manipulation
 // ---------------------
 static inline PyObject* PyTuple_New(Py_ssize_t size) {
     return mp_obj_new_tuple((size_t)size, NULL);
@@ -58,7 +70,6 @@ static inline int PyTuple_SET_ITEM(PyObject* tuple, Py_ssize_t i, PyObject* item
     items[i] = item;
     return 0;
 }
-
 // Note: Tuples are immutable in MicroPython, but for compatibility with CPython,
 // we allow setting items assuming the tuple is freshly created and not yet used.
 
@@ -86,8 +97,12 @@ static inline PyObject* PySet_New(PyObject* iterable) {
     }
 }
 
+// ============================================================
+// Type Checking and Conversion
+// ============================================================
+
 // ---------------------
-// Type Checking
+// Type Checking Macros
 // ---------------------
 #define PyLong_Check(obj) mp_obj_is_int(obj)
 #define PyFloat_Check(obj) mp_obj_is_float(obj)
@@ -98,7 +113,7 @@ static inline PyObject* PySet_New(PyObject* iterable) {
 #define PySet_Check(obj) mp_obj_is_type(obj, &mp_type_set)
 
 // ---------------------
-// Type Conversion
+// Type Conversion Functions
 // ---------------------
 static inline long PyLong_AsLong(PyObject* obj) {
     if (mp_obj_is_int(obj)) {
@@ -133,8 +148,12 @@ static inline PyObject* __Pyx_PyUnicode_FromString(const char* s) {
     return mp_obj_new_str(s, strlen(s));
 }
 
-// ---------------------
+// ============================================================
 // Sequence Operations
+// ============================================================
+
+// ---------------------
+// Basic Sequence Operations
 // ---------------------
 static inline PyObject* PySequence_GetItem(PyObject* seq, Py_ssize_t i) {
     return mp_obj_subscr(seq, mp_obj_new_int(i), MP_OBJ_SENTINEL);
@@ -155,7 +174,7 @@ static inline Py_ssize_t PySequence_Size(PyObject* seq) {
 }
 
 // ---------------------
-// General Subscription Operations
+// General Subscription Operations (Mapping Protocol)
 // ---------------------
 static inline PyObject* PyObject_GetItem(PyObject* obj, PyObject* key) {
     return mp_obj_subscr(obj, key, MP_OBJ_SENTINEL);
@@ -182,7 +201,7 @@ static inline int PyDict_SetItemString(PyObject* dict, const char* key, PyObject
 }
 
 // ---------------------
-// Iteration
+// Iteration Functions
 // ---------------------
 static inline PyObject* PyObject_GetIter(PyObject* obj) {
     return mp_getiter(obj, NULL);
@@ -196,9 +215,9 @@ static inline PyObject* PyIter_Next(PyObject* iter) {
     return item;
 }
 
-// ---------------------
-// Function Calls
-// ---------------------
+// ============================================================
+// Function Calling
+// ============================================================
 static inline PyObject* PyObject_Call(PyObject* callable, PyObject* args, PyObject* kwargs) {
     size_t n_args = mp_obj_len(args);
     size_t n_kw = (kwargs == NULL) ? 0 : mp_obj_dict_get_len(kwargs);
@@ -225,9 +244,9 @@ static inline PyObject* __Pyx_PyObject_CallOneArg(PyObject* func, PyObject* arg)
     return mp_call_function_n_kw(func, 1, 0, args);
 }
 
-// ---------------------
-// Attribute Access
-// ---------------------
+// ============================================================
+// Attribute Access and Object Introspection
+// ============================================================
 static inline int PyObject_SetAttr(PyObject* obj, PyObject* attr, PyObject* value) {
     mp_store_attr(obj, attr, value);
     return 0;
@@ -241,8 +260,42 @@ static inline PyObject* __Pyx_GetBuiltinName(const char* name) {
 
 PyObject* __pyx_builtin_print = NULL;
 
+static inline PyObject* PyObject_Type(PyObject* obj) {
+    return (PyObject*)mp_obj_get_type(obj);
+}
+
+static inline int PyObject_IsTrue(PyObject* obj) {
+    return mp_obj_is_true(obj);
+}
+
+static inline int PyObject_HasAttr(PyObject* obj, PyObject* attr) {
+    return mp_obj_attr_exists(obj, attr);
+}
+
+static inline PyObject* PyObject_GetAttr(PyObject* obj, PyObject* attr) {
+    return mp_load_attr(obj, attr);
+}
+
+static inline int PyObject_DelAttr(PyObject* obj, PyObject* attr) {
+    mp_store_attr(obj, attr, MP_OBJ_NULL);
+    return 0;
+}
+
+static inline Py_ssize_t PyObject_Length(PyObject* obj) {
+    mp_obj_t len_obj = mp_obj_len_maybe(obj);
+    if (len_obj == MP_OBJ_NULL) {
+        mp_raise_TypeError(MP_ERROR_TEXT("object has no len()"));
+        return -1;
+    }
+    return mp_obj_get_int(len_obj);
+}
+
+// ============================================================
+// Module Management
+// ============================================================
+
 // ---------------------
-// Module Creation (already defined in the draft)
+// Module Creation and Importing
 // ---------------------
 typedef struct {
     const char *m_name;
@@ -269,18 +322,28 @@ static inline PyObject* PyModule_Create(PyModuleDef* def) {
 
 #define PyModule_GetDict(module) mp_obj_module_get_globals(module)
 
-// ---------------------
-// Module Importing
-// ---------------------
 static inline PyObject* PyImport_ImportModule(const char* name) {
     mp_obj_t import_func = mp_load_global(MP_QSTR___import__);
     mp_obj_t module_name = mp_obj_new_str(name, strlen(name));
     return mp_call_function_1(import_func, module_name);
 }
 
-// ---------------------
+static inline PyObject* PyModule_GetName(PyObject* module) {
+    if (mp_obj_is_type(module, &mp_type_module)) {
+        return mp_obj_module_get_name(module);
+    }
+    mp_raise_TypeError(MP_ERROR_TEXT("expected module"));
+    return NULL;
+}
+
+static inline int PyModule_AddObject(PyObject* module, const char* name, PyObject* value) {
+    mp_obj_dict_store(mp_obj_module_get_globals(module), mp_obj_new_str(name, strlen(name)), value);
+    return 0;
+}
+
+// ============================================================
 // Error Handling
-// ---------------------
+// ============================================================
 static inline void PyErr_SetObject(PyObject* exc, PyObject* value) {
     if (mp_obj_is_type(exc, &mp_type_type)) {
         mp_obj_t exc_instance = mp_obj_new_exception_arg1(exc, value);
@@ -293,6 +356,23 @@ static inline void PyErr_SetObject(PyObject* exc, PyObject* value) {
 #define PyErr_SetString(exc, msg) mp_raise_msg(&mp_type_##exc, MP_ERROR_TEXT(msg))
 #define PyErr_Occurred() (mp_obj_is_exception_type(mp_err_get_raised()) ? mp_err_get_raised() : NULL)
 #define __Pyx_PyErr_SetNone(exc) mp_raise_type(&mp_type_##exc)
+
+static inline PyObject* PyErr_NewException(const char* name, PyObject* base, PyObject* dict) {
+    mp_obj_t exc_type = mp_obj_new_type(mp_obj_new_str(name, strlen(name)), base ? base : (PyObject*)&mp_type_Exception, dict);
+    return exc_type;
+}
+
+static inline void PyErr_Clear(void) {
+    mp_err_clear();
+}
+
+static inline PyObject* PyErr_Occurred(void) {
+    return mp_obj_is_exception_type(mp_err_get_raised()) ? mp_err_get_raised() : NULL;
+}
+
+// ============================================================
+// String and Byte Operations
+// ============================================================
 
 // ---------------------
 // String Representations
@@ -310,12 +390,6 @@ static inline PyObject* PyObject_Repr(PyObject* obj) {
 static inline const char* PyObject_AsString(PyObject* obj) {
     return mp_obj_str_get_str(obj);
 }
-
-// ---------------------
-// Warning for Existing PyTuple_SET_ITEM
-// ---------------------
-// Note: In MicroPython, tuples are immutable. Setting items in a tuple using PyTuple_SET_ITEM 
-// may lead to undefined behavior. Use with caution and only on freshly created tuples before use.
 
 // ---------------------
 // Byte String Operations
@@ -384,8 +458,15 @@ static inline Py_ssize_t PyByteArray_Size(PyObject* obj) {
 }
 
 // ---------------------
-// Number Operations
+// Additional Type Checking for Bytes
 // ---------------------
+#define PyBytes_Check(obj) mp_obj_is_type(obj, &mp_type_bytes)
+#define PyByteArray_Check(obj) mp_obj_is_type(obj, &mp_type_bytearray)
+#define PyMemoryView_Check(obj) mp_obj_is_type(obj, &mp_type_memoryview)
+
+// ============================================================
+// Numeric Operations
+// ============================================================
 static inline PyObject* PyNumber_Add(PyObject* a, PyObject* b) {
     return mp_binary_op(MP_BINARY_OP_ADD, a, b);
 }
@@ -418,9 +499,9 @@ static inline PyObject* PyNumber_Absolute(PyObject* obj) {
     return mp_unary_op(MP_UNARY_OP_ABS, obj);
 }
 
-// ---------------------
+// ============================================================
 // Comparison Operations
-// ---------------------
+// ============================================================
 #define Py_LT 0
 #define Py_LE 1
 #define Py_EQ 2
@@ -447,9 +528,9 @@ static inline int PyObject_RichCompareBool(PyObject* a, PyObject* b, int op) {
     return mp_obj_is_true(result);
 }
 
-// ---------------------
+// ============================================================
 // Buffer Protocol
-// ---------------------
+// ============================================================
 typedef struct {
     void* buf;
     Py_ssize_t len;
@@ -510,9 +591,9 @@ static inline PyObject* PyMemoryView_FromObject(PyObject* obj) {
         (buf)->internal = NULL; \
     } while (0)
 
-// ---------------------
+// ============================================================
 // Argument Parsing
-// ---------------------
+// ============================================================
 static int PyArg_ParseTuple(PyObject* tuple, const char* format, ...) {
     if (!mp_obj_is_type(tuple, &mp_type_tuple)) {
         mp_raise_TypeError(MP_ERROR_TEXT("expected tuple"));
@@ -567,6 +648,10 @@ static int PyArg_ParseTuple(PyObject* tuple, const char* format, ...) {
     va_end(args);
     return 1;
 }
+
+// ============================================================
+// Enhanced Container Operations
+// ============================================================
 
 // ---------------------
 // Enhanced Sequence Operations
@@ -665,81 +750,9 @@ static inline PyObject* PyDict_Items(PyObject* dict) {
     return NULL;
 }
 
-// ---------------------
-// Object Operations
-// ---------------------
-static inline int PyObject_IsTrue(PyObject* obj) {
-    return mp_obj_is_true(obj);
-}
-
-static inline PyObject* PyObject_Type(PyObject* obj) {
-    return (PyObject*)mp_obj_get_type(obj);
-}
-
-static inline int PyObject_HasAttr(PyObject* obj, PyObject* attr) {
-    return mp_obj_attr_exists(obj, attr);
-}
-
-static inline PyObject* PyObject_GetAttr(PyObject* obj, PyObject* attr) {
-    return mp_load_attr(obj, attr);
-}
-
-static inline int PyObject_DelAttr(PyObject* obj, PyObject* attr) {
-    mp_store_attr(obj, attr, MP_OBJ_NULL);
-    return 0;
-}
-
-static inline Py_ssize_t PyObject_Length(PyObject* obj) {
-    mp_obj_t len_obj = mp_obj_len_maybe(obj);
-    if (len_obj == MP_OBJ_NULL) {
-        mp_raise_TypeError(MP_ERROR_TEXT("object has no len()"));
-        return -1;
-    }
-    return mp_obj_get_int(len_obj);
-}
-
-// ---------------------
-// Type Checking (Additional)
-// ---------------------
-#define PyBytes_Check(obj) mp_obj_is_type(obj, &mp_type_bytes)
-#define PyByteArray_Check(obj) mp_obj_is_type(obj, &mp_type_bytearray)
-#define PyMemoryView_Check(obj) mp_obj_is_type(obj, &mp_type_memoryview)
-
-// ---------------------
-// Module Operations
-// ---------------------
-static inline PyObject* PyModule_GetName(PyObject* module) {
-    if (mp_obj_is_type(module, &mp_type_module)) {
-        return mp_obj_module_get_name(module);
-    }
-    mp_raise_TypeError(MP_ERROR_TEXT("expected module"));
-    return NULL;
-}
-
-static inline int PyModule_AddObject(PyObject* module, const char* name, PyObject* value) {
-    mp_obj_dict_store(mp_obj_module_get_globals(module), mp_obj_new_str(name, strlen(name)), value);
-    return 0;
-}
-
-// ---------------------
-// Exception Handling (Additional)
-// ---------------------
-static inline PyObject* PyErr_NewException(const char* name, PyObject* base, PyObject* dict) {
-    mp_obj_t exc_type = mp_obj_new_type(mp_obj_new_str(name, strlen(name)), base ? base : (PyObject*)&mp_type_Exception, dict);
-    return exc_type;
-}
-
-static inline void PyErr_Clear(void) {
-    mp_err_clear();
-}
-
-static inline PyObject* PyErr_Occurred(void) {
-    return mp_obj_is_exception_type(mp_err_get_raised()) ? mp_err_get_raised() : NULL;
-}
-
-// ---------------------
-// Miscellaneous
-// ---------------------
+// ============================================================
+// Miscellaneous Functions
+// ============================================================
 static inline PyObject* Py_BuildValue(const char* format, ...) {
     if (format[0] == '\0') {
         return Py_None;
@@ -772,13 +785,12 @@ static inline PyObject* PyObject_CallObject(PyObject* callable, PyObject* args) 
     return PyObject_Call(callable, args, NULL);
 }
 
-// ---------------------
-// Module Initialization Support (Stubs)
-// ---------------------
+// ============================================================
+// Module Initialization Support and CPython Feature Disables
+// ============================================================
 #define __pyx_mstate_global ((void*)0)
 #define __pyx_d NULL
 
-// Disable unused CPython features
 #define CYTHON_USE_TYPE_SLOTS 0
 #define CYTHON_FAST_THREAD_STATE 0
 #define CYTHON_FAST_PYCALL 0
