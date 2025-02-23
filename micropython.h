@@ -9,6 +9,12 @@
 #include "py/builtin.h"
 #include <string.h>  // for strlen()
 
+#include "py/lexer.h"
+#include "py/parse.h"
+#include "py/compile.h"
+#include "py/runtime.h"
+
+
 // ------------------------------------------------------------
 // Basic Types and Constants
 // ------------------------------------------------------------
@@ -288,6 +294,22 @@ static inline Py_ssize_t PyObject_Length(PyObject* obj) {
         return -1;
     }
     return mp_obj_get_int(len_obj);
+}
+
+static inline int PyRun_SimpleString(const char *command) {
+    // Create a new lexer for the command string.
+    mp_lexer_t *lex = mp_lexer_new_from_str_len(MP_QSTR_, command, strlen(command), 0);
+    if (lex == NULL) {
+        mp_raise_MemoryError();
+        return -1;
+    }
+    // Parse the command as file input (i.e. allow full statements).
+    mp_parse_tree_t parse_tree = mp_parse(lex, MP_PARSE_FILE_INPUT);
+    // Compile the parse tree into a callable code object.
+    mp_obj_t module_fun = mp_compile(&parse_tree, "<stdin>", MP_EMIT_OPT_NONE, false);
+    // Execute the compiled code (ignores any return value).
+    mp_call_function_0(module_fun);
+    return 0;
 }
 
 // ============================================================
