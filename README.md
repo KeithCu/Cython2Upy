@@ -1,5 +1,7 @@
 # MicroPython-Cython Compatibility Layer
 
+![Cython2Upy](https://github.com/user-attachments/assets/a635b8ad-a53c-45ff-8a63-679599729726)
+
 This repository provides a compatibility header and stubs to enable Cython-generated modules (targeting the CPython API) to run on MicroPython.
 
 ## Overview
