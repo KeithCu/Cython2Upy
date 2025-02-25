@@ -1,12 +1,12 @@
 # Define source files
-CYTHON_FILES = my_list.pyx
-C_FILES = main.c
-C_FILES_GENERATED = $(CYTHON_FILES:.pyx=.c)
-ALL_C_FILES = $(C_FILES_GENERATED) $(C_FILES)
+CYTHON_FILES = src/my_list.pyx
+C_FILES = src/main.c
+C_FILES_GENERATED = build/my_list.c
+ALL_C_FILES = $(C_FILES) $(C_FILES_GENERATED)
 
 # Compiler and linker settings (default to gcc, adjustable)
 CC ?= gcc
-CFLAGS ?= -O2
+CFLAGs ?= -O2
 
 # Path configuration (use forward slashes, override with env var or cmdline)
 MICROPYTHON_DIR ?= micropython  # Relative default, assumes subdirectory
@@ -14,8 +14,8 @@ MICROPYTHON_INCLUDE_DIR = $(MICROPYTHON_DIR)/include
 MICROPYTHON_LIB_DIR = $(MICROPYTHON_DIR)/lib
 
 # Consolidated compiler and linker flags
-INCLUDES = -I. -I$(MICROPYTHON_INCLUDE_DIR)
-LIBS = -L$(MICROPYTHON_LIB_DIR) -lmicropython
+INCLUDES = -I include/ -I $(MICROPYTHON_INCLUDE_DIR)
+LIBS = -L $(MICROPYTHON_LIB_DIR) -lmicropython
 
 # File extensions and commands for portability
 EXE_SUFFIX = $(if $(filter %.exe,$(wildcard $(CC)*)),.exe,)  # .exe on Windows if gcc produces it
@@ -31,6 +31,9 @@ ifdef SystemRoot  # Detect Windows via cmd.exe environment variable
     LIBS := $(subst /,\,$(LIBS))
 endif
 
+# Define object files
+OBJS = $(addprefix build/,$(notdir $(ALL_C_FILES:.c=.o)))
+
 # Phony targets for convenience
 .PHONY: all clean paths check_paths
 
@@ -38,8 +41,8 @@ endif
 all: check_paths your_program$(EXE_SUFFIX)
 
 # Rule to generate C files from Cython
-$(C_FILES_GENERATED): %.c: %.pyx
-	cython -o $@ $<
+build/%.c: src/%.pyx
+	cython -o $@ src/$<
 
 # Modify include directives in specific C files
 .includes_modified: $(ALL_C_FILES)
@@ -47,24 +50,29 @@ $(C_FILES_GENERATED): %.c: %.pyx
 	$(TOUCH) .includes_modified
 
 # Compile C files to object files
-%.o: %.c .includes_modified
-	$(CC) $(CFLAGS) -c -o $@ $< $(INCLUDES)
+build/%.o: src/%.c .includes_modified
+	$(CC) $(CFLAGs) -c -o $@ src/$< $(INCLUDES)
+
+build/%.o: build/%.c .includes_modified
+	$(CC) $(CFLAGs) -c -o $@ build/$< $(INCLUDES)
 
 # Link everything into the final program
-your_program$(EXE_SUFFIX): $(ALL_C_FILES:.c=.o)
-	$(CC) -o $@ $^ $(LIBS)
+your_program$(EXE_SUFFIX): $(OBJS)
+	$(CC) -o $@ $(OBJS) $(LIBS)
 
 # Clean up generated files
 clean:
-	-$(RM) $(C_FILES_GENERATED) *.o your_program$(EXE_SUFFIX) .includes_modified
+	-$(RM) -r build/
+	-$(RM) your_program$(EXE_SUFFIX)
+	-$(RM) .includes_modified
 
 # Print paths for debugging (use @echo for Make, not shell echo)
 paths:
-	@echo MICROPYTHON_DIR=$(MICROPYTHON_DIR)
-	@echo MICROPYTHON_INCLUDE_DIR=$(MICROPYTHON_INCLUDE_DIR)
-	@echo MICROPYTHON_LIB_DIR=$(MICROPYTHON_LIB_DIR)
-	@echo INCLUDES=$(INCLUDES)
-	@echo LIBS=$(LIBS)
+	$(info MICROPYTHON_DIR=$(MICROPYTHON_DIR))
+	$(info MICROPYTHON_INCLUDE_DIR=$(MICROPYTHON_INCLUDE_DIR))
+	$(info MICROPYTHON_LIB_DIR=$(MICROPYTHON_LIB_DIR))
+	$(info INCLUDES=$(INCLUDES))
+	$(info LIBS=$(LIBS))
 
 # Validate paths using Make's built-in conditionals
 check_paths:
